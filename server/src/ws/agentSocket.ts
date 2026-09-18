@@ -3,6 +3,7 @@ import type { FastifyInstance } from "fastify";
 import type { Knex } from "knex";
 import type { AgentHub } from "./agentHub.js";
 import type { DeviceRegistry } from "../services/deviceRegistry.js";
+import type { EnrollTokenService } from "../services/enrollTokenService.js";
 import type { AuditService } from "../services/auditService.js";
 import type { AlertService } from "../services/alertService.js";
 import type { Config } from "../core/config.js";
@@ -17,6 +18,8 @@ import { logger } from "../util/logger.js";
 
 interface HelloData {
   deviceId?: string;
+  installToken?: string; // one-time per-user enroll token (first registration only)
+  emailHint?: string; // display hint only, never trusted for ownership
   hostname?: string;
   version?: string;
   platform?: string;
@@ -39,7 +42,7 @@ const MAX_METRICS_PER_MIN = 12;
 
 export function registerAgentSocket(
   app: FastifyInstance,
-  deps: { hub: AgentHub; db: Knex; registry: DeviceRegistry; audit: AuditService; config: Config; alerts: AlertService },
+  deps: { hub: AgentHub; db: Knex; registry: DeviceRegistry; enrollTokens: EnrollTokenService; audit: AuditService; config: Config; alerts: AlertService },
 ) {
   const pending = new Map<import("ws").WebSocket, PendingAuth>();
   const metricsRate = new Map<string, { count: number; windowStart: number }>();
@@ -111,7 +114,13 @@ export function registerAgentSocket(
               data: { nonce: nonce.toString("base64") },
             });
           } else {
-            // First contact: TOFU — register with provided key (or none until upgrade)
+            // First contact: requires a one-time per-user install token.
+            // Resolves device ownership (devices.owner_user_id) and marks token used.
+            if (!d.installToken || typeof d.installToken !== "string") {
+              return fail("install token required");
+            }
+            const ownerUserId = await deps.enrollTokens.consume(d.installToken, d.deviceId);
+            if (!ownerUserId) return fail("invalid or expired install token");
             const { row: newRow } = await deps.registry.upsertFromHello({
               deviceId: d.deviceId,
               hostname: d.hostname ?? "",
@@ -121,6 +130,7 @@ export function registerAgentSocket(
               arch: d.arch,
               hardwareId: d.hardwareId,
               ip: req.ip ?? null,
+              ownerUserId,
             });
             const pk = isHex(d.publicKey) ? d.publicKey : null;
             if (pk) await deps.registry.setPublicKey(newRow.id, pk);

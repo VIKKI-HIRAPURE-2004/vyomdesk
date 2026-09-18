@@ -19,7 +19,9 @@ export async function deviceRoutes(
 ) {
   app.get("/api/v1/devices", { preHandler: [app.auth] }, async (req) => {
     const q = req.query as { groupId?: string; online?: string; q?: string };
+    const isAdmin = req.user!.role === "admin";
     const devices = await deps.registry.list({
+      ownerUserId: isAdmin ? undefined : req.user!.id,
       groupId: q.groupId,
       online: q.online === undefined ? undefined : q.online === "true",
       q: q.q,
@@ -29,14 +31,14 @@ export async function deviceRoutes(
 
   app.get("/api/v1/devices/:id", { preHandler: [app.auth] }, async (req, reply) => {
     const { id } = req.params as { id: string };
-    const row = await deps.registry.get(id);
+    const row = await deps.registry.getOwned(id, req.user!.id, req.user!.role === "admin");
     if (!row) throw app.errors.notFound("Device");
     return { device: deps.registry.toDTO(row) };
   });
 
   app.get("/api/v1/devices/:id/metrics", { preHandler: [app.auth] }, async (req, reply) => {
     const { id } = req.params as { id: string };
-    const row = await deps.registry.get(id);
+    const row = await deps.registry.getOwned(id, req.user!.id, req.user!.role === "admin");
     if (!row) throw app.errors.notFound("Device");
     const q = req.query as { from?: string; to?: string };
     const to = q.to ? new Date(q.to) : new Date();
@@ -48,7 +50,7 @@ export async function deviceRoutes(
   app.patch("/api/v1/devices/:id", { preHandler: [app.auth] }, async (req, reply) => {
     const { id } = req.params as { id: string };
     const body = req.body as { name?: string; notes?: string | null; tags?: string[] };
-    const row = await deps.registry.get(id);
+    const row = await deps.registry.getOwned(id, req.user!.id, req.user!.role === "admin");
     if (!row) throw app.errors.notFound("Device");
     if (body.name !== undefined) {
       if (typeof body.name !== "string" || !body.name.trim() || body.name.length > 255) {
@@ -77,6 +79,8 @@ export async function deviceRoutes(
 
   app.delete("/api/v1/devices/:id", { preHandler: [app.auth] }, async (req, reply) => {
     const { id } = req.params as { id: string };
+    const row = await deps.registry.getOwned(id, req.user!.id, req.user!.role === "admin");
+    if (!row) throw app.errors.notFound("Device");
     await deps.registry.remove(id);
     await deps.audit.log({
       actorType: "user",
@@ -92,6 +96,8 @@ export async function deviceRoutes(
   // Send a live command to an agent (metrics.poll etc.)
   app.post("/api/v1/devices/:id/poll", { preHandler: [app.auth] }, async (req, reply) => {
     const { id } = req.params as { id: string };
+    const owned = await deps.registry.getOwned(id, req.user!.id, req.user!.role === "admin");
+    if (!owned) throw app.errors.notFound("Device");
     if (!deps.hub.isOnline(id)) throw app.errors.badRequest("device offline");
     const ok = deps.hub.send(id, { v: 1, id: `srv-${Date.now()}`, cmd: "metrics.poll", ts: Date.now() });
     if (!ok) throw app.errors.badRequest("send failed");
@@ -107,7 +113,7 @@ export async function deviceRoutes(
     if (!Object.values(Channel).includes(channel as never)) {
       throw app.errors.badRequest("invalid channel");
     }
-    const row = await deps.registry.get(id);
+    const row = await deps.registry.getOwned(id, req.user!.id, req.user!.role === "admin");
     if (!row) throw app.errors.notFound("Device");
     // rights enforcement: admin bypasses, others need channel rights on the device's group
     let rights = 0;

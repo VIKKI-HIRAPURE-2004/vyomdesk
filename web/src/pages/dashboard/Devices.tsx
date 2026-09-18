@@ -2,6 +2,7 @@ import { useState } from "react";
 import { Link } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { api } from "../../api/client.js";
+import AddDeviceModal from "./AddDeviceModal.js";
 
 interface Device {
   id: string;
@@ -20,6 +21,7 @@ export default function DevicesPage() {
   const [filterOnline, setFilterOnline] = useState<boolean | null>(null);
   const [filterGroup, setFilterGroup] = useState<string | null>(null);
   const [search, setSearch] = useState("");
+  const [showAdd, setShowAdd] = useState(false);
 
   const { data, isLoading, error, refetch } = useQuery({
     queryKey: ["devices", filterOnline, filterGroup],
@@ -53,9 +55,15 @@ export default function DevicesPage() {
           <input
             value={search}
             onChange={(e) => setSearch(e.target.value)}
-            placeholder="Searchâ€¦"
+            placeholder="Search…"
             className="rounded-lg bg-slate-900 border border-slate-800 px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500"
           />
+          <button
+            onClick={() => setShowAdd(true)}
+            className="rounded-lg bg-brand-600 hover:bg-brand-500 px-3 py-1.5 text-sm font-medium"
+          >
+            + Add Device
+          </button>
           <button
             onClick={() => refetch()}
             className="rounded-lg bg-slate-800 hover:bg-slate-700 px-3 py-1.5 text-sm"
@@ -64,6 +72,7 @@ export default function DevicesPage() {
           </button>
         </div>
       </div>
+      {showAdd && <AddDeviceModal onClose={() => { setShowAdd(false); refetch(); }} />}
 
       <div className="flex gap-2 mb-4 text-sm">
         <button

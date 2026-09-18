@@ -20,14 +20,17 @@ import (
 // (Reconnect pattern adapted from MeshCentral agent, Apache-2.0.)
 
 type Client struct {
-	serverURL string
-	deviceID  string
-	identity  *Identity
-	hostname  string
-	conn      *websocket.Conn
-	mu        sync.Mutex
-	closed    bool
-	nextID    int64
+	serverURL    string
+	deviceID     string
+	identity     *Identity
+	hostname     string
+	installToken string // one-time per-user enroll token (cleared after first authOk)
+	emailHint    string
+	onEnrolled   func() // called once after first successful auth with token
+	conn         *websocket.Conn
+	mu           sync.Mutex
+	closed       bool
+	nextID       int64
 }
 
 func NewClient(serverURL, deviceID string, id *Identity) *Client {
@@ -36,6 +39,15 @@ func NewClient(serverURL, deviceID string, id *Identity) *Client {
 		host = "unknown"
 	}
 	return &Client{serverURL: serverURL, deviceID: deviceID, identity: id, hostname: host}
+}
+
+// NewClientWithEnroll attaches a one-time install token to the handshake.
+func NewClientWithEnroll(serverURL, deviceID string, id *Identity, installToken, emailHint string, onEnrolled func()) *Client {
+	c := NewClient(serverURL, deviceID, id)
+	c.installToken = normalizeToken(installToken)
+	c.emailHint = emailHint
+	c.onEnrolled = onEnrolled
+	return c
 }
 
 type envelope struct {
@@ -91,7 +103,7 @@ func (c *Client) connectOnce() error {
 
 	// hello with public key (TOFU registration on first contact; server may challenge)
 	hello := envelope{V: 1, ID: c.newID(), Cmd: "hello", TS: time.Now().UnixMilli()}
-	helloData, _ := json.Marshal(map[string]any{
+	helloMap := map[string]any{
 		"deviceId":        c.deviceID,
 		"hostname":        c.hostname,
 		"version":         Version,
@@ -99,7 +111,12 @@ func (c *Client) connectOnce() error {
 		"platformVersion": platformVersion(),
 		"arch":            runtime.GOARCH,
 		"publicKey":       c.identity.PublicHex,
-	})
+	}
+	if c.installToken != "" {
+		helloMap["installToken"] = c.installToken
+		helloMap["emailHint"] = c.emailHint
+	}
+	helloData, _ := json.Marshal(helloMap)
 	hello.Data = helloData
 	if err := conn.WriteJSON(hello); err != nil {
 		return err
@@ -116,6 +133,12 @@ func (c *Client) connectOnce() error {
 		switch env.Cmd {
 		case "authOk":
 			log.Printf("authenticated with server")
+			if c.installToken != "" {
+				c.installToken = ""
+				if c.onEnrolled != nil {
+					c.onEnrolled()
+				}
+			}
 			go c.metricsLoop(conn, metricsStop)
 		case "challenge":
 			var d struct {
@@ -160,12 +183,17 @@ func (c *Client) connectOnce() error {
 func (c *Client) metricsLoop(conn *websocket.Conn, stop chan struct{}) {
 	t := time.NewTicker(60 * time.Second)
 	defer t.Stop()
+	// Heartbeat: ping keeps lastPong fresh so dashboard shows Online (Spec Sec 14).
+	hb := time.NewTicker(30 * time.Second)
+	defer hb.Stop()
 	m := collectMetrics()
 	c.reply(conn, c.newID(), "metrics.push", m)
 	for {
 		select {
 		case <-stop:
 			return
+		case <-hb.C:
+			c.reply(conn, c.newID(), "ping", nil)
 		case <-t.C:
 			m := collectMetrics()
 			c.reply(conn, c.newID(), "metrics.push", m)

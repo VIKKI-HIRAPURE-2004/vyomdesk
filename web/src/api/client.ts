@@ -89,6 +89,11 @@ export const api = {
         method: "POST",
         body: JSON.stringify({ channel }),
       }),
+    enrollToken: () =>
+      request<{ installToken: string; emailHint: string | null; expiresAt: string }>(
+        "/devices/enroll-token",
+        { method: "POST" },
+      ),
   },
   quickSupport: {
     create: (deviceId: string, opts?: { password?: string; ttlMinutes?: number }) =>

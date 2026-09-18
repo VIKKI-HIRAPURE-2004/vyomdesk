@@ -33,8 +33,23 @@ func (s *vyomService) Execute(args []string, r <-chan svc.ChangeRequest, status 
 
 	serverURL := os.Getenv("VYOM_SERVER")
 	deviceID := os.Getenv("VYOM_DEVICE_ID")
+	installToken := os.Getenv("VYOM_INSTALL_TOKEN")
 
-	id, err := LoadOrCreateIdentity(defaultIdentityDir())
+	// vyomlink.json next to the binary (written by `install`) survives
+	// reboots; env is fallback. Auto-start after Windows restart reuses it.
+	dir := defaultIdentityDir()
+	enroll := loadEnroll(dir)
+	if enroll.ServerURL != "" && serverURL == "" {
+		serverURL = enroll.ServerURL
+	}
+	if enroll.DeviceID != "" && deviceID == "" {
+		deviceID = enroll.DeviceID
+	}
+	if enroll.InstallToken != "" && installToken == "" {
+		installToken = enroll.InstallToken
+	}
+
+	id, err := LoadOrCreateIdentity(dir)
 	if err != nil {
 		logToBoth("service: identity: %v", err)
 		return false, 1
@@ -43,7 +58,9 @@ func (s *vyomService) Execute(args []string, r <-chan svc.ChangeRequest, status 
 		deviceID = deriveDeviceID(id)
 	}
 
-	c := NewClient(serverURL, deviceID, id)
+	c := NewClientWithEnroll(serverURL, deviceID, id, installToken, enroll.EmailHint, func() {
+		markEnrolled(dir, enroll)
+	})
 	go c.Run()
 
 	status <- svc.Status{State: svc.Running, Accepts: accepted}

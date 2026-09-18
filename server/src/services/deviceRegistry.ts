@@ -7,6 +7,7 @@ import type { AgentHub } from "../ws/agentHub.js";
 export interface DeviceRow {
   id: string;
   group_id: string | null;
+  owner_user_id: string | null;
   name: string;
   agent_version: string | null;
   platform: string;
@@ -87,8 +88,16 @@ export class DeviceRegistry {
     return this.db("devices").where({ id }).first();
   }
 
-  async list(filter: { groupId?: string; online?: boolean; q?: string } = {}): Promise<DeviceDTO[]> {
+  /** Ownership-checked fetch: returns undefined unless device belongs to user. Non-admins only. Admins pass isAdmin=true to bypass. */
+  async getOwned(id: string, userId: string, isAdmin = false): Promise<DeviceRow | undefined> {
+    const q = this.db("devices").where({ id });
+    if (!isAdmin) q.andWhere({ owner_user_id: userId });
+    return q.first();
+  }
+
+  async list(filter: { ownerUserId?: string; groupId?: string; online?: boolean; q?: string } = {}): Promise<DeviceDTO[]> {
     const q = this.db("devices").select("*");
+    if (filter.ownerUserId) q.where({ owner_user_id: filter.ownerUserId });
     if (filter.groupId) q.where({ group_id: filter.groupId });
     if (filter.q) q.where("name", "like", `%${filter.q}%`);
     const rows = await q.orderBy("name");
@@ -109,6 +118,7 @@ export class DeviceRegistry {
     arch?: string;
     hardwareId?: string;
     ip: string | null;
+    ownerUserId?: string;
   }): Promise<{ row: DeviceRow; isNew: boolean }> {
     const existing = await this.get(p.deviceId);
     const patch = {
@@ -122,7 +132,9 @@ export class DeviceRegistry {
       last_ip: p.ip,
     };
     if (existing) {
-      await this.db("devices").where({ id: p.deviceId }).update(patch);
+      // Owner is immutable: never overwrite an existing owner's binding.
+      const ownerPatch = !existing.owner_user_id && p.ownerUserId ? { owner_user_id: p.ownerUserId } : {};
+      await this.db("devices").where({ id: p.deviceId }).update({ ...patch, ...ownerPatch });
       const row = (await this.get(p.deviceId))!;
       return { row, isNew: false };
     }
@@ -138,6 +150,7 @@ export class DeviceRegistry {
     await this.db("devices").insert({
       id: p.deviceId,
       ...patch,
+      owner_user_id: p.ownerUserId ?? null,
       approved: 1,
       tags: JSON.stringify([]),
     });

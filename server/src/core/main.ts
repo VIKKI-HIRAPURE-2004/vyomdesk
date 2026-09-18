@@ -13,10 +13,12 @@ import { Errors } from "../util/errors.js";
 import { getDb, closeDb } from "../db/index.js";
 import { runMigrations } from "../db/migrate.js";
 import { AuthService } from "../services/authService.js";
+import { EnrollTokenService } from "../services/enrollTokenService.js";
 import { DeviceRegistry } from "../services/deviceRegistry.js";
 import { AuditService } from "../services/auditService.js";
 import { SessionManager } from "../services/sessionManager.js";
 import { authRoutes } from "../api/routes/auth.js";
+import { enrollRoutes } from "../api/routes/enroll.js";
 import { deviceRoutes } from "../api/routes/devices.js";
 import { groupRoutes } from "../api/routes/groups.js";
 import { agentDownloadRoutes } from "../api/routes/downloads.js";
@@ -66,6 +68,7 @@ export async function buildServer() {
   await app.register(cors, { origin: true });
 
   const auth = new AuthService(db, config);
+  const enrollTokens = new EnrollTokenService(db);
   const registry = new DeviceRegistry(db, hub);
   const audit = new AuditService(db);
   const groups = new GroupService(db);
@@ -110,7 +113,7 @@ export async function buildServer() {
   await app.register(websocket);
 
   // Agent control socket (Ed25519 challenge-response handshake)
-  registerAgentSocket(app, { hub, db, registry, audit, config, alerts });
+  registerAgentSocket(app, { hub, db, registry, enrollTokens, audit, config, alerts });
 
   // Browser event stream (device online/offline, metrics ticks)
   registerBrowserEvents(app, hub);
@@ -119,6 +122,7 @@ export async function buildServer() {
   registerRelaySocket(app, { hub, db, sessions, registry, recordings });
 
   await authRoutes(app, auth);
+  await enrollRoutes(app, { tokens: enrollTokens, audit });
   await deviceRoutes(app, { registry, hub, audit, sessions, groups });
   await groupRoutes(app, { groups, audit });
   await quickSupportRoutes(app, { quick, audit, groups });
