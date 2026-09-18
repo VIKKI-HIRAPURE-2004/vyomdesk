@@ -60,6 +60,10 @@ export const api = {
         body: JSON.stringify({ email, name, password }),
       }),
     me: () => request<{ user: { id: string; email: string; name: string; role: string } }>("/auth/me"),
+    users: (q: string) =>
+      request<{ users: Array<{ id: string; email: string; name: string; role: string }> }>(
+        `/users?q=${encodeURIComponent(q)}`,
+      ),
   },
   devices: {
     list: (params?: { groupId?: string; online?: string; q?: string }) => {

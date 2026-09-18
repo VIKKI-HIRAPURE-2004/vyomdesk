@@ -517,3 +517,23 @@ full-flow âœ… relay âœ… files âœ… groups âœ… desktop âœ… con
 2. User: GitHub repo + push (I do the push once URL given)
 3. User: DNS A record -> then Ubuntu deploy walkthrough
 4. P2 backlog: WebRTC P2P, audio, Android agent, i18n (hi/en), API keys/CLI, role-management UI, email-lookup endpoint for Groups UI
+### Update 2026-09-18 (Session 19b): USER DIRECTORY SEARCH (Groups UI gap closed)
+
+**Problem**: Groups permission grants needed a raw userId (uuid) paste - no way to look a user up by email (documented API gap since session 17).
+
+**Fix (backend)**:
+- `server/src/services/authService.ts`: added `listUsers(q, limit)` - email LIKE substring search, selects id/email/name/role ONLY (no password_hash)
+- `server/src/api/routes/auth.ts`: `GET /api/v1/users?q=<substr>&limit=<n>` - admin-only (403 for others), limit clamped 1..200 default 50
+- Rate limiting: covered by existing global /api/* bucket (not the stricter auth bucket - login/register only)
+
+**Fix (web)**:
+- `web/src/api/client.ts`: `api.auth.users(q)` method
+- `web/src/pages/dashboard/Groups.tsx`: uuid-paste input replaced with debounced email search + dropdown (2+ chars triggers query), click to select user, Grant button enables on selection, selected user shown in green. Stale doc comment updated.
+
+**Test**: `server/test/e2e/usersearch-test.mjs` - 8 checks all PASS:
+- non-admin gets 403, admin search finds fresh-registered user, self-lookup works
+- limit honored (limit=2), NO password_hash leak in response payload
+
+**Regression**: tsc green (server+web), vitest 5/5, groups-test.mjs PASS full cycle, agent still connected (agents=1)
+
+**Corruption incidents this session (edit tool)**: authService.ts x2 (recreated via create_new_file), main.ts wiped to 45 bytes (recreated), .gitignore corrupted (recreated). Protocol remains: after EVERY edit verify length + grep marker before building; corrupted files are deleted + recreated.

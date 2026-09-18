@@ -9,8 +9,8 @@ import { RIGHTS_LABELS } from "@vyomdesk/shared";
  *  - create/delete groups (soft-delete)
  *  - per-group user permission rows (rights bitmask chips)
  *  - device assignment via checkboxes
- * Permission grants need a userId (shown on each user row; admins can
- * copy it from the audit log or user list). Non-admins only see groups
+ * Grants resolve users via the admin user-directory search
+ * (GET /api/v1/users?q=email-substring). Non-admins only see groups
  * they hold permissions on.
  */
 
@@ -21,7 +21,8 @@ export default function GroupsPage() {
   const [selected, setSelected] = useState<string | null>(null);
   const [newName, setNewName] = useState("");
   const [newDesc, setNewDesc] = useState("");
-  const [permUserId, setPermUserId] = useState("");
+  const [permEmail, setPermEmail] = useState("");
+  const [permUser, setPermUser] = useState<{ id: string; email: string } | null>(null);
   const [permErr, setPermErr] = useState<string | null>(null);
   const [err, setErr] = useState<string | null>(null);
 
@@ -40,6 +41,15 @@ export default function GroupsPage() {
     queryKey: ["devices-all"],
     queryFn: () => api.devices.list({}),
     enabled: !!selected,
+  });
+
+  // admin-only user directory search (email substring) - debounced
+  const [userSearchKey, setUserSearchKey] = useState<string | null>(null);
+  const userSearch = useQuery({
+    queryKey: ["users", userSearchKey],
+    queryFn: () => api.auth.users(userSearchKey ?? ""),
+    enabled: !!userSearchKey,
+    staleTime: 30_000,
   });
 
   const createGroup = useMutation({
@@ -63,9 +73,11 @@ export default function GroupsPage() {
   });
 
   const addPermission = useMutation({
-    mutationFn: () => api.groups.setPermission(selected!, permUserId.trim(), DEFAULT_PERM_RIGHTS),
+    mutationFn: () => api.groups.setPermission(selected!, permUser!.id, DEFAULT_PERM_RIGHTS),
     onSuccess: () => {
-      setPermUserId("");
+      setPermUser(null);
+      setPermEmail("");
+      setUserSearchKey(null);
       setPermErr(null);
       qc.invalidateQueries({ queryKey: ["group", selected] });
     },
@@ -179,21 +191,52 @@ export default function GroupsPage() {
             {/* permissions */}
             <div className="bg-slate-900 border border-slate-800 rounded-xl p-4">
               <h3 className="text-sm font-medium text-slate-300 mb-3">User permissions</h3>
-              <div className="flex gap-2">
+              <div className="flex gap-2 relative">
                 <input
-                  value={permUserId}
-                  onChange={(e) => setPermUserId(e.target.value)}
-                  placeholder="user id to grant (uuid)"
+                  value={permEmail}
+                  onChange={(e) => {
+                    setPermEmail(e.target.value);
+                    setPermUser(null);
+                    const q = e.target.value.trim();
+                    setUserSearchKey(q.length >= 2 ? q : null);
+                  }}
+                  placeholder="search user by email…"
                   className="flex-1 bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-sm"
                 />
                 <button
                   onClick={() => addPermission.mutate()}
-                  disabled={addPermission.isPending || !permUserId.trim()}
+                  disabled={addPermission.isPending || !permUser}
                   className="bg-brand-500 hover:bg-brand-600 disabled:opacity-50 text-white rounded-lg px-3 py-2 text-sm"
                 >
                   Grant
                 </button>
+                {!permUser && permEmail.trim().length >= 2 && userSearch.data?.users && (
+                  <div className="absolute z-10 mt-11 w-full bg-slate-800 border border-slate-700 rounded-lg shadow-lg max-h-48 overflow-y-auto">
+                    {userSearch.data.users.length === 0 && (
+                      <p className="px-3 py-2 text-xs text-slate-400">no match</p>
+                    )}
+                    {userSearch.data.users.map((u) => (
+                      <button
+                        key={u.id}
+                        onClick={() => {
+                          setPermUser(u);
+                          setPermEmail(u.email);
+                          setUserSearchKey(null);
+                        }}
+                        className="w-full text-left px-3 py-2 hover:bg-slate-700 text-sm"
+                      >
+                        <span className="text-slate-200">{u.email}</span>
+                        <span className="ml-2 text-xs text-slate-500">{u.name} · {u.role}</span>
+                      </button>
+                    ))}
+                  </div>
+                )}
               </div>
+              {permUser && (
+                <p className="mt-2 text-xs text-emerald-400">
+                  selected: {permUser.email}
+                </p>
+              )}
               {permErr && <p className="mt-2 text-xs text-rose-500">{permErr}</p>}
 
               <div className="mt-4 space-y-2">

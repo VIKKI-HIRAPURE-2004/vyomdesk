@@ -76,4 +76,14 @@ export class AuthService {
       throw Errors.unauthorized();
     }
   }
+
+  /** Admin user-directory search: email substring -> {id, email, name, role}. */
+  async listUsers(q: string, limit: number): Promise<AuthUser[]> {
+    const rows = await this.db("users")
+      .select("id", "email", "name", "role")
+      .where("email", "like", `%${q}%`)
+      .orderBy("email")
+      .limit(limit);
+    return rows as AuthUser[];
+  }
 }

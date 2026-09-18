@@ -26,4 +26,19 @@ export async function authRoutes(app: FastifyInstance, auth: AuthService) {
   app.get("/api/v1/auth/me", { preHandler: [app.auth] }, async (req) => {
     return { user: req.user } satisfies { user: AuthUser };
   });
+
+  // User directory (admin-only): search users by email substring so the
+  // Groups permission UI can resolve emails -> userId (uuid) without
+  // pasting raw uuids. Also usable for future role management.
+  app.get<{ Querystring: { q?: string; limit?: string } }>(
+    "/api/v1/users",
+    { preHandler: [app.auth] },
+    async (req, reply) => {
+      if (req.user?.role !== "admin") throw app.errors.forbidden();
+      const { q = "", limit } = req.query as { q?: string; limit?: string };
+      const max = Math.min(Math.max(parseInt(limit ?? "50", 10) || 50, 1), 200);
+      const rows = await auth.listUsers(q, max);
+      reply.send({ users: rows });
+    },
+  );
 }

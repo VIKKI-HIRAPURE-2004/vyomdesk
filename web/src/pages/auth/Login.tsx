@@ -1,9 +1,11 @@
 import { FormEvent, useState } from "react";
+import { useNavigate } from "react-router-dom";
 import { useAuth } from "../../stores/auth.js";
 import { ApiError } from "../../api/client.js";
 
 export default function Login() {
   const login = useAuth((s) => s.login);
+  const navigate = useNavigate();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [err, setErr] = useState<string | null>(null);
@@ -15,6 +17,9 @@ export default function Login() {
     setBusy(true);
     try {
       await login(email, password);
+      // Success: go to the dashboard. Without this the user stays on
+      // /login even though the token was saved (looked like "nothing happened").
+      navigate("/devices", { replace: true });
     } catch (e) {
       setErr(e instanceof ApiError ? e.message : "Login failed");
     } finally {

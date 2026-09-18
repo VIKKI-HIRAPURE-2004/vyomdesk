@@ -1,9 +1,11 @@
 import { FormEvent, useState } from "react";
+import { useNavigate } from "react-router-dom";
 import { useAuth } from "../../stores/auth.js";
 import { ApiError } from "../../api/client.js";
 
 export default function Register() {
   const register = useAuth((s) => s.register);
+  const navigate = useNavigate();
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -20,6 +22,9 @@ export default function Register() {
     setBusy(true);
     try {
       await register(email, name, password);
+      // Success: go to the dashboard. Without this the user stays on
+      // /register even though the account was created + auto-login worked.
+      navigate("/devices", { replace: true });
     } catch (e) {
       setErr(e instanceof ApiError ? e.message : "Registration failed");
     } finally {
