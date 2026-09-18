@@ -1,0 +1,47 @@
+# VyomDesk production compose: server + Caddy (auto-HTTPS via Let's Encrypt).
+# Usage (from repo root): docker compose -f docker/docker-compose.prod.yml up -d --build
+# Requires .env in repo root: VYOM_JWT_SECRET, VYOM_ENCRYPTION_KEY (64-hex each).
+services:
+  server:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.server
+    # internal only - Caddy is the public entrypoint (80/443)
+    expose:
+      - "4430"
+    environment:
+      NODE_ENV: production
+      PORT: 4430
+      VYOM_PUBLIC_URL: ${VYOM_PUBLIC_URL:-https://vyomdesk.online}
+      VYOM_DB_CLIENT: sqlite3
+      VYOM_DB_FILENAME: /data/vyomdesk.sqlite
+      VYOM_JWT_SECRET: ${VYOM_JWT_SECRET:?set in .env}
+      VYOM_ENCRYPTION_KEY: ${VYOM_ENCRYPTION_KEY:?set in .env}
+      VYOM_AGENT_PING_INTERVAL: ${VYOM_AGENT_PING_INTERVAL:-30}
+      # Optional SMTP for email alerts (P1.9)
+      VYOM_SMTP_HOST: ${VYOM_SMTP_HOST:-}
+      VYOM_SMTP_PORT: ${VYOM_SMTP_PORT:-587}
+      VYOM_SMTP_USER: ${VYOM_SMTP_USER:-}
+      VYOM_SMTP_PASS: ${VYOM_SMTP_PASS:-}
+      VYOM_SMTP_FROM: ${VYOM_SMTP_FROM:-alerts@vyomdesk.online}
+    volumes:
+      - server-data:/data
+    restart: unless-stopped
+
+  caddy:
+    image: caddy:2-alpine
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+      - caddy-config:/config
+    depends_on:
+      - server
+    restart: unless-stopped
+
+volumes:
+  server-data:
+  caddy-data:
+  caddy-config:

@@ -472,3 +472,48 @@ full-flow âœ… relay âœ… files âœ… groups âœ… desktop âœ… con
 1. P1.14: public cloud deploy (domain + host + GitHub Pages for docs) + signup polish
 2. P2 backlog: WebRTC P2P, audio, Android agent, i18n (hi/en), API keys/CLI, heartbeat alert
 3. Windows agent EV signing consideration (P3 budget per risk register)
+## Update 2026-09-18: Session 19 - DOMAIN SECURED + PRODUCTION HARDENING + GIT INIT
+
+### Domain: vyomdesk.online (user secured)
+- All references updated: docs-site/docusaurus.config.ts (url), env.example, docker-compose.yml, docs/02-ARCHITECTURE, 03-FEATURES, 08-SECURITY, 09-LEGAL-COPYRIGHT, 10-ROADMAP, 11-DEPLOYMENT - vyomdesk.com -> vyomdesk.online everywhere
+- docs-site rebuilt: sitemap + og:url now emit vyomdesk.online
+
+### Production bug fixes (found during deploy prep)
+1. **First-user admin bootstrap** (server/src/services/authService.ts): register() hardcoded role "tech" for everyone. Fresh deploy would have NO admin. Now: user count == 0 -> role "admin", else "tech" (MeshCentral convention: first user -> siteadmin). Typecheck-safe count read via `as Array<{n}>` cast.
+2. **Static web serving** (server/src/core/main.ts): server served API/WS only; web UI had no production host path. Added @fastify/static@7 (v8 needs Fastify 5; server is Fastify 4 - version-mismatch crash caught in foreground run) serving web/dist with SPA fallback (setNotFoundHandler -> index.html for GET, API 404s stay JSON). Verified live: / -> 200, /devices -> index.html fallback, health OK.
+3. **.gitignore hardened**: server/downloads/ (11MB agent binaries + latest.json), agent/identity.key (Ed25519 private key) - both must never enter the repo. Verified staged file list: only Go sources under agent/cmd/vyomlink/, no binaries/env/db/logs.
+
+### Git (was NOT installed on the dev box)
+- winget install Git.Git -> git 2.55.0.windows.3 at C:\Program Files\Git\cmd\git.exe (full path used; PATH refresh needed a new shell)
+- git init at repo root + commit ffa99c9 "VyomDesk v0.1.0: complete P1 platform" - 179 files, size-pack 0 (loose objects), no secrets staged (grep-verified)
+- git identity: vyomdesk / vikki@vyomdesk.online (placeholder; user can amend)
+
+### Docker/production stack completed (P1.14 prep)
+- docker/Dockerfile.server: now also builds web/ (pnpm --filter @vyomdesk/web build) and ships web/dist into the runtime image -> single container serves UI+API+WS
+- docker/docker-compose.yml: VYOM_PUBLIC_URL default https://vyomdesk.online, SMTP pass-through
+- NEW docker/docker-compose.prod.yml: server (expose 4430 internal-only) + caddy:2-alpine (80/443 public, auto-HTTPS Let's Encrypt), volumes for sqlite + caddy certs
+- NEW docker/Caddyfile: vyomdesk.online -> reverse_proxy server:4430 (WS auto-upgrade, /downloads/* flush_interval -1 for large binaries), www redirect
+- NEW docker/deploy.sh: one-shot Ubuntu bootstrap - docker install (get.docker.com), clone, generate .env secrets (openssl rand -hex 32, chmod 600), compose up, ufw 80/443, health check, next-steps printout
+- NEW docs/14-DEPLOY-GUIDE.md: DNS records, deploy, first-account-is-admin warning, agent install (Linux/Windows + systemd), ops (logs/update/backup), TLS troubleshooting, post-deploy checklist (P1.14 exit criteria)
+
+### Linux agent build (first cross-compile)
+- GOOS=linux GOARCH=amd64 CGO_ENABLED=0 go build -ldflags "-s -w" -> agent/vyomlink-linux-amd64 (7.5MB)
+- PTY support confirmed: terminal_unix.go uses creack/pty (pure Go) - terminal channel works on Linux targets
+- deploy.sh + docs guide reference the linux binary for Ubuntu-hosted monitoring
+
+### Server restart + regression (all green)
+- restart-server.ps1 rewritten: now KILLS old listener on 4430 first (Get-NetTCPConnection -> Stop-Process), then spawns; previously it spawned blindly -> EADDRINUSE risk
+- tsc: green; vitest 5/5; web build green; health agents=1 after agent relaunch (agent-run.log: authenticated)
+- Live checks: login e2e@test.local role=admin, devices list 31, UI root + SPA fallback 200
+
+### Remaining for P1.14 (user actions pending)
+1. GitHub: create private repo "vyomdesk", give URL -> git remote add + push
+2. DNS: A records @ + www -> Ubuntu public IP
+3. Ubuntu: bash docker/deploy.sh (script + guide ready)
+4. First signup on https://vyomdesk.online -> becomes admin
+
+### Next up (priority)
+1. User: GUI testing pass (localhost:5173; login e2e@test.local / TestPass123!)
+2. User: GitHub repo + push (I do the push once URL given)
+3. User: DNS A record -> then Ubuntu deploy walkthrough
+4. P2 backlog: WebRTC P2P, audio, Android agent, i18n (hi/en), API keys/CLI, role-management UI, email-lookup endpoint for Groups UI

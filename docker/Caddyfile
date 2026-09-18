@@ -1,0 +1,19 @@
+# VyomDesk public entrypoint - Caddy auto-HTTPS (Let's Encrypt).
+# WebSocket upgrades (agent.ashx, relay.ashx, events.ashx) are handled
+# automatically by Caddy for the reverse_proxy handler.
+
+vyomdesk.online {
+	encode gzip
+
+	# Agent binary downloads (large files, no buffering)
+	reverse_proxy /downloads/* server:4430 {
+		flush_interval -1
+	}
+
+	# Everything else: web UI, /api/*, all websocket endpoints
+	reverse_proxy server:4430
+}
+
+www.vyomdesk.online {
+	redir https://vyomdesk.online{uri} permanent
+}
