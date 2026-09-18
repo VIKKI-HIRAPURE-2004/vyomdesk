@@ -1,0 +1,18 @@
+[Unit]
+Description=VyomDesk VyomLink Agent
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+# Adjust server URL and (optional) device id here, or use an EnvironmentFile.
+Environment=VYOM_SERVER=ws://your-server:4430/agent.ashx
+#EnvironmentFile=/etc/vyomlink/vyomlink.env
+ExecStart=/usr/local/bin/vyomlink
+Restart=always
+RestartSec=5
+User=root
+# Desktop capture on Linux (X11) needs the service to see the user session.
+
+[Install]
+WantedBy=multi-user.target

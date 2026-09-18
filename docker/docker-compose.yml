@@ -1,0 +1,30 @@
+services:
+  server:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.server
+    ports:
+      - "4430:4430"
+    environment:
+      NODE_ENV: production
+      PORT: 4430
+      VYOM_PUBLIC_URL: ${VYOM_PUBLIC_URL:-https://vyomdesk.online}
+      VYOM_DB_CLIENT: sqlite3
+      VYOM_DB_FILENAME: /data/vyomdesk.sqlite
+      VYOM_JWT_SECRET: ${VYOM_JWT_SECRET:?set in .env}
+      VYOM_ENCRYPTION_KEY: ${VYOM_ENCRYPTION_KEY:?set in .env}
+      # TLS handled by reverse proxy (Caddy/nginx) with Let's Encrypt - set
+      # VYOM_TLS_CERT/VYOM_TLS_KEY instead if you want direct-HTTPS mode.
+      VYOM_AGENT_PING_INTERVAL: ${VYOM_AGENT_PING_INTERVAL:-30}
+      # Optional SMTP for email alerts (P1.9)
+      VYOM_SMTP_HOST: ${VYOM_SMTP_HOST:-}
+      VYOM_SMTP_PORT: ${VYOM_SMTP_PORT:-587}
+      VYOM_SMTP_USER: ${VYOM_SMTP_USER:-}
+      VYOM_SMTP_PASS: ${VYOM_SMTP_PASS:-}
+      VYOM_SMTP_FROM: ${VYOM_SMTP_FROM:-alerts@vyomdesk.online}
+    volumes:
+      - server-data:/data
+    restart: unless-stopped
+
+volumes:
+  server-data:

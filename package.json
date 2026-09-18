@@ -1,0 +1,23 @@
+{
+  "name": "vyomdesk",
+  "version": "0.1.0",
+  "private": true,
+  "description": "VyomDesk — Free & open-source remote monitoring, management & remote desktop. Apache 2.0. Includes software developed as part of MeshCentral (see NOTICE).",
+  "license": "Apache-2.0",
+  "packageManager": "pnpm@9.12.0",
+  "engines": {
+    "node": ">=20.0.0"
+  },
+  "scripts": {
+    "dev:server": "pnpm --filter @vyomdesk/server dev",
+    "dev:web": "pnpm --filter @vyomdesk/web dev",
+    "build": "pnpm -r build",
+    "test": "pnpm -r test",
+    "lint": "pnpm -r lint",
+    "license:check": "node scripts/license-check.mjs"
+  },
+  "devDependencies": {
+    "@types/node": "^20.14.0",
+    "typescript": "^5.5.4"
+  }
+}

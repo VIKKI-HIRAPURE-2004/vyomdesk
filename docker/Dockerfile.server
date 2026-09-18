@@ -1,0 +1,37 @@
+# VyomDesk Server
+# Build: docker build -f docker/Dockerfile.server -t vyomdesk-server .
+# (run from repo root; web/ is built in-stage and served by Fastify in production)
+FROM node:20-alpine AS base
+WORKDIR /app
+
+# Enable pnpm
+corepack enable
+
+# Copy workspace manifests first (layer caching)
+COPY package.json pnpm-workspace.yaml ./
+COPY server/package.json server/package.json
+COPY shared/package.json shared/package.json
+COPY web/package.json web/package.json
+
+# Install deps
+RUN pnpm install --frozen-lockfile=false
+
+# Copy sources & build
+COPY tsconfig.base.json ./
+COPY shared/ shared/
+COPY server/ server/
+COPY web/ web/
+RUN pnpm --filter @vyomdesk/shared build && pnpm --filter @vyomdesk/server build && pnpm --filter @vyomdesk/web build
+
+# --- Runtime ---
+FROM node:20-alpine
+WORKDIR /app
+ENV NODE_ENV=production
+COPY --from=base /app/node_modules ./node_modules
+COPY --from=base /app/server/dist ./server/dist
+COPY --from=base /app/server/src/db/migrations ./server/src/db/migrations
+COPY --from=base /app/shared/dist ./shared/dist
+COPY --from=base /app/web/dist ./web/dist
+COPY --from=base /app/server/package.json ./server/package.json
+EXPOSE 4430
+CMD ["node", "server/dist/core/main.js"]

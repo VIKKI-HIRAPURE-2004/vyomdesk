@@ -1,0 +1,48 @@
+# Dependencies
+node_modules/
+.pnpm-store/
+
+# Build outputs
+dist/
+build/
+*.tsbuildinfo
+
+# Runtime data
+data/
+*.sqlite
+*.sqlite3
+*.db
+recordings/
+meshcentral-data/
+
+# Secrets & env
+.env
+.env.local
+.env.*.local
+*.pem
+*.key
+!certs/README.md
+
+# Agent build artifacts
+agent/vyomlink
+agent/vyomlink-*
+agent/build/
+agent/capture-rs/target/
+# Agent identity/keys never leave the machine
+agent/identity.key
+# Agent binaries served by the server (downloads/agent/<plat>/<file>)
+# - built fresh via publish-agent.ps1; latest.json is generated there too
+server/downloads/
+
+# Logs
+logs/
+*.log
+npm-debug.log*
+
+# OS
+.DS_Store
+Thumbs.db
+
+# IDE
+.idea/
+*.swp
