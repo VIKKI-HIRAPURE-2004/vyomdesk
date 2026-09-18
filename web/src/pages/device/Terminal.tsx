@@ -23,6 +23,58 @@ export default function TerminalPage() {
     let term: Terminal | null = null;
     let ws: WebSocket | null = null;
 
+    const sendText = (text: string) => {
+      if (!ws || ws.readyState !== WebSocket.OPEN) return;
+      const bytes = new TextEncoder().encode(text);
+      const frame = new Uint8Array(4 + bytes.length);
+      frame[0] = CH_TERMINAL;
+      frame[1] = 0x00;
+      frame[2] = (bytes.length >> 8) & 0xff;
+      frame[3] = bytes.length & 0xff;
+      frame.set(bytes, 4);
+      ws.send(frame);
+    };
+
+    // xterm.js v6 no longer auto-replies to ConPTY's private-mode queries
+    // (win32-input-mode \x1b[?9001h, focus reporting \x1b[?1004h). conhost
+    // blocks shell output until it gets mode replies, so without answering
+    // them the terminal stays blank and drops all typed input.
+    const MODE_QUERY_REPLIES: Record<string, string> = {
+      "9001": "\x1b[?9001;2$y", // win32 input mode: unsupported
+      "1004": "\x1b[?1004;2$y", // focus reporting: unsupported
+      "1002": "\x1b[?1002;2$y", // button-event mouse tracking
+      "1006": "\x1b[?1006;2$y", // SGR mouse encoding
+      "2004": "\x1b[?2004;2$y", // bracketed paste
+    };
+    let unprocessed = "";
+    const replyToModeQueries = (chunk: string) => {
+      unprocessed += chunk;
+      const re = /\x1b\[\?(\d+)(h|l)/g;
+      let m: RegExpExecArray | null;
+      while ((m = re.exec(unprocessed)) !== null) {
+        const reply = MODE_QUERY_REPLIES[m[1]!];
+        if (reply && m[2] === "h") sendText(reply);
+      }
+      unprocessed = unprocessed.slice(-64); // bound memory; queries arrive at startup
+    };
+
+    const sendResize = (cols: number, rows: number) => {
+      if (!ws || ws.readyState !== WebSocket.OPEN) return;
+      // resize control payload: [0x00][0x01][cols:2 BE][rows:2 BE]
+      const f = new Uint8Array(10);
+      f[0] = CH_TERMINAL;
+      f[1] = 0x00;
+      f[2] = 0;
+      f[3] = 6;
+      f[4] = 0x00;
+      f[5] = 0x01;
+      f[6] = (cols >> 8) & 0xff;
+      f[7] = cols & 0xff;
+      f[8] = (rows >> 8) & 0xff;
+      f[9] = rows & 0xff;
+      ws.send(f);
+    };
+
     async function connect() {
       // 1. create relay session (one-time token)
       let token = "";
@@ -65,7 +117,9 @@ export default function TerminalPage() {
           if (term) sendResize(term.cols, term.rows); // sync initial PTY size
           return;
         }
-        term?.write(new TextDecoder().decode(payload));
+        const decoded = new TextDecoder().decode(payload);
+        term?.write(decoded);
+        replyToModeQueries(decoded);
       };
       ws.onclose = () => {
         setStatus("closed");
@@ -90,33 +144,9 @@ export default function TerminalPage() {
       term.open(termRef.current);
       fit.fit();
     }
-    const sendResize = (cols: number, rows: number) => {
-      if (!ws || ws.readyState !== WebSocket.OPEN) return;
-      // resize control payload: [0x00][0x01][cols:2 BE][rows:2 BE]
-      const f = new Uint8Array(10);
-      f[0] = CH_TERMINAL;
-      f[1] = 0x00;
-      f[2] = 0;
-      f[3] = 6;
-      f[4] = 0x00;
-      f[5] = 0x01;
-      f[6] = (cols >> 8) & 0xff;
-      f[7] = cols & 0xff;
-      f[8] = (rows >> 8) & 0xff;
-      f[9] = rows & 0xff;
-      ws.send(f);
-    };
     term.onData((d) => {
       if (ws && ws.readyState === WebSocket.OPEN) {
-        const enc = new TextEncoder();
-        const bytes = enc.encode(d);
-        const frame = new Uint8Array(4 + bytes.length);
-        frame[0] = CH_TERMINAL;
-        frame[1] = 0x00;
-        frame[2] = (bytes.length >> 8) & 0xff;
-        frame[3] = bytes.length & 0xff;
-        frame.set(bytes, 4);
-        ws.send(frame);
+        sendText(d);
       }
     });
     const onResize = () => fit.fit();

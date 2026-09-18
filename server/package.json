@@ -3,9 +3,9 @@
   "version": "0.1.0",
   "license": "Apache-2.0",
   "type": "module",
-  "scripts": {
+    "scripts": {
     "dev": "tsx watch src/core/main.ts",
-    "build": "tsc -p tsconfig.json",
+    "build": "pnpm --filter @vyomdesk/shared build && tsc -p tsconfig.json",
     "start": "node dist/core/main.js",
     "migrate": "tsx src/db/migrate.ts",
     "test": "vitest run",

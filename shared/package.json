@@ -4,14 +4,29 @@
   "description": "Shared types & constants for VyomDesk server + web (rights bitmask, VyomLink protocol, API DTOs)",
   "license": "Apache-2.0",
   "type": "module",
-  "main": "./src/index.ts",
+  "main": "./dist/index.js",
   "types": "./src/index.ts",
   "exports": {
-    ".": "./src/index.ts",
-    "./rights": "./src/rights.ts",
-    "./protocol": "./src/protocol.ts",
-    "./api": "./src/api.ts",
-    "./models": "./src/models.ts"
+    ".": {
+      "types": "./src/index.ts",
+      "default": "./dist/index.js"
+    },
+    "./rights": {
+      "types": "./src/rights.ts",
+      "default": "./dist/rights.js"
+    },
+    "./protocol": {
+      "types": "./src/protocol.ts",
+      "default": "./dist/protocol.js"
+    },
+    "./api": {
+      "types": "./src/api.ts",
+      "default": "./dist/api.js"
+    },
+    "./models": {
+      "types": "./src/models.ts",
+      "default": "./dist/models.js"
+    }
   },
   "scripts": {
     "build": "tsc -p tsconfig.json",
