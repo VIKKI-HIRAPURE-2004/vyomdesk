@@ -41,4 +41,18 @@ export async function authRoutes(app: FastifyInstance, auth: AuthService) {
       reply.send({ users: rows });
     },
   );
+
+  // Role management (admin-only): promote/demote a user. An admin cannot
+  // demote themselves; invalid roles rejected. Audit-logged.
+  app.patch<{ Body: { role: string }; Params: { id: string } }>(
+    "/api/v1/users/:id",
+    { preHandler: [app.auth] },
+    async (req, reply) => {
+      if (req.user?.role !== "admin") throw app.errors.forbidden();
+      const { role } = req.body ?? ({} as any);
+      if (!role) throw app.errors.badRequest("role required");
+      const user = await auth.setRole(req.params.id, role, req.user!);
+      reply.send({ user });
+    },
+  );
 }

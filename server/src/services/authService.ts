@@ -86,4 +86,22 @@ export class AuthService {
       .limit(limit);
     return rows as AuthUser[];
   }
+
+  /**
+   * Admin: change a user's role. Guards:
+   *  - target must exist
+   *  - role must be one of the known roles
+   *  - an admin cannot demote themselves (prevents losing the only admin)
+   */
+  async setRole(targetUserId: string, role: string, actor: AuthUser): Promise<AuthUser> {
+    const allowed = ["admin", "tech", "viewer"];
+    if (!allowed.includes(role)) throw Errors.badRequest("role must be admin|tech|viewer");
+    const row = await this.db("users").where({ id: targetUserId }).first();
+    if (!row) throw Errors.notFound("User");
+    if (row.id === actor.id && role !== "admin") {
+      throw Errors.badRequest("cannot demote yourself");
+    }
+    await this.db("users").where({ id: targetUserId }).update({ role });
+    return { id: row.id, email: row.email, name: row.name, role };
+  }
 }

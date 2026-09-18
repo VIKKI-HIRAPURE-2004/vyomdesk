@@ -64,6 +64,11 @@ export const api = {
       request<{ users: Array<{ id: string; email: string; name: string; role: string }> }>(
         `/users?q=${encodeURIComponent(q)}`,
       ),
+    setUserRole: (id: string, role: string) =>
+      request<{ user: { id: string; email: string; name: string; role: string } }>(
+        `/users/${id}`,
+        { method: "PATCH", body: JSON.stringify({ role }) },
+      ),
   },
   devices: {
     list: (params?: { groupId?: string; online?: string; q?: string }) => {

@@ -6,6 +6,7 @@ import Register from "./pages/auth/Register.js";
 import DevicesPage from "./pages/dashboard/Devices.js";
 import GroupsPage from "./pages/dashboard/Groups.js";
 import AlertsPage from "./pages/dashboard/Alerts.js";
+import UsersPage from "./pages/dashboard/Users.js";
 import DeviceDetail from "./pages/device/DeviceDetail.js";
 import TerminalPage from "./pages/device/Terminal.js";
 import DesktopPage from "./pages/device/Desktop.js";
@@ -28,6 +29,7 @@ function Layout({ children }: { children: React.ReactNode }) {
             <a href="/devices" className="hover:text-white">Devices</a>
             <a href="/groups" className="hover:text-white">Groups</a>
             <a href="/alerts" className="hover:text-white">Alerts</a>
+            <a href="/users" className="hover:text-white">Users</a>
             <span className="text-slate-500">{user?.email}</span>
             <button onClick={logout} className="bg-slate-800 hover:bg-slate-700 rounded-lg px-3 py-1.5">
               Sign out
@@ -101,6 +103,16 @@ export default function App() {
           <RequireAuth>
             <Layout>
               <GroupsPage />
+            </Layout>
+          </RequireAuth>
+        }
+      />
+      <Route
+        path="/users"
+        element={
+          <RequireAuth>
+            <Layout>
+              <UsersPage />
             </Layout>
           </RequireAuth>
         }

@@ -537,3 +537,24 @@ full-flow âœ… relay âœ… files âœ… groups âœ… desktop âœ… con
 **Regression**: tsc green (server+web), vitest 5/5, groups-test.mjs PASS full cycle, agent still connected (agents=1)
 
 **Corruption incidents this session (edit tool)**: authService.ts x2 (recreated via create_new_file), main.ts wiped to 45 bytes (recreated), .gitignore corrupted (recreated). Protocol remains: after EVERY edit verify length + grep marker before building; corrupted files are deleted + recreated.
+### Update 2026-09-18 (Session 19c): ROLE MANAGEMENT UI (admin promote/demote)
+
+**Problem**: roles could only be changed via raw SQL (documented in the deploy guide); fresh signups are all "tech" - a public deployment had no way to make more admins or viewers.
+
+**Backend**:
+- `server/src/services/authService.ts`: `setRole(targetId, role, actor)` - validates role in [admin|tech|viewer], 404 unknown user, blocks self-demotion (prevents losing the only admin; self-keep-admin is an allowed no-op)
+- `server/src/api/routes/auth.ts`: `PATCH /api/v1/users/:id` (admin-only) body {role}
+
+**Web**:
+- `web/src/pages/dashboard/Users.tsx` (NEW): admin user directory - email search (debounced 2+ chars, reuses GET /api/v1/users), role chips (admin/tech/viewer) per user, self row shows "(you)" and non-admin options disabled client-side too
+- `web/src/App.tsx`: /users route + nav link (Devices/Groups/Alerts/Users)
+- `web/src/api/client.ts`: `api.auth.setUserRole(id, role)`
+
+**Test**: `server/test/e2e/roles-test.mjs` - 12 checks all PASS:
+- fresh register -> role tech; non-admin PATCH -> 403; invalid role -> 400
+- promote viewer -> admin -> demote tech (all 200 + role echoed)
+- self-demotion -> 400; self keep admin -> 200; unknown user -> 404
+
+**Regression**: server tsc green, web tsc + vite build green, server restarted clean (agents=1), usersearch + groups tests still green.
+
+**Git**: 4 commits on main now (ffa99c9, 8661db4, 09df61d + this feature committed separately).
