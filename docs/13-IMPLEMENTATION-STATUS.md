@@ -558,3 +558,19 @@ full-flow âœ… relay âœ… files âœ… groups âœ… desktop âœ… con
 **Regression**: server tsc green, web tsc + vite build green, server restarted clean (agents=1), usersearch + groups tests still green.
 
 **Git**: 4 commits on main now (ffa99c9, 8661db4, 09df61d + this feature committed separately).
+### Update 2026-09-18 (Session 19d): LEGAL PAGES + SIGNUP ToS ACCEPTANCE
+
+**Problem**: public deploy (P1.14) requires live ToS/Privacy + signup-time acceptance (docs/09-LEGAL-COPYRIGHT.md public-cloud legal table; deploy guide checklist item).
+
+**Web**:
+- `web/src/pages/public/Legal.tsx` (NEW): public /legal page - 8 sections (Acceptance, Service, Acceptable Use, Data, Availability, Termination, Changes, Contact with abuse@/security@ vyomdesk.online emails) + Apache-2.0/MeshCentral attribution note. No auth required.
+- `web/src/pages/auth/Register.tsx`: ToS acceptance checkbox (links to /legal); submit blocked until checked ("Please accept the Terms of Service to continue")
+- `web/src/App.tsx`: /legal public route
+
+**Legal content notes**:
+- Copy adapted from docs/09 public-cloud section: as-is no warranty, only-authorized-devices rule, no session-content storage unless recording explicitly enabled, best-effort availability, abuse termination right
+- IMPORTANT (user follow-up before real launch): this is a template - have it reviewed; replace contact emails with real inboxes; India DPDP Act 2023 + GDPR language still to be reviewed by counsel (documented in 09-LEGAL)
+
+**Live verification**: /legal 200 via SPA fallback (production static mode), / 200, agents=1 after restart, tsc + vite build green.
+
+**Git**: 5 commits on main (ffa99c9, 8661db4, 09df61d, 66ac690 + this).

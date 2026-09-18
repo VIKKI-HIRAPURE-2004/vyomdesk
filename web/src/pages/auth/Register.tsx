@@ -9,12 +9,17 @@ export default function Register() {
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [agree, setAgree] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
   const submit = async (e: FormEvent) => {
     e.preventDefault();
     setErr(null);
+    if (!agree) {
+      setErr("Please accept the Terms of Service to continue");
+      return;
+    }
     if (password.length < 8) {
       setErr("Password must be at least 8 characters");
       return;
@@ -84,6 +89,20 @@ export default function Register() {
             />
           </div>
           {err && <p className="text-sm text-red-400">{err}</p>}
+          <label className="flex items-start gap-2 text-xs text-slate-400">
+            <input
+              type="checkbox"
+              checked={agree}
+              onChange={(e) => setAgree(e.target.checked)}
+              className="mt-0.5 accent-brand-500"
+            />
+            <span>
+              I agree to the{" "}
+              <a href="/legal" className="text-brand-400 hover:underline">
+                Terms of Service &amp; Privacy Policy
+              </a>
+            </span>
+          </label>
           <button
             type="submit"
             disabled={busy}

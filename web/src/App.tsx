@@ -14,6 +14,7 @@ import FilesPage from "./pages/device/Files.js";
 import RecordingsPage from "./pages/device/Recordings.js";
 import QuickSupportPage from "./pages/public/QuickSupport.js";
 import ShareLinkPage from "./pages/public/ShareLink.js";
+import LegalPage from "./pages/public/Legal.js";
 
 function Layout({ children }: { children: React.ReactNode }) {
   const user = useAuth((s) => s.user);
@@ -77,6 +78,7 @@ export default function App() {
       <Route path="/share/session" element={<DesktopPage />} />
       <Route path="/login" element={<Login />} />
       <Route path="/register" element={<Register />} />
+      <Route path="/legal" element={<LegalPage />} />
       <Route
         path="/devices"
         element={
