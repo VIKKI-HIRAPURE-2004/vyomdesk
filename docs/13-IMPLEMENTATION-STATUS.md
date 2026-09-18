@@ -574,3 +574,25 @@ full-flow âœ… relay âœ… files âœ… groups âœ… desktop âœ… con
 **Live verification**: /legal 200 via SPA fallback (production static mode), / 200, agents=1 after restart, tsc + vite build green.
 
 **Git**: 5 commits on main (ffa99c9, 8661db4, 09df61d, 66ac690 + this).
+
+---
+
+## Update 2026-09-18: Session 19 - PROD RUN-PATH FIXES + FIRST CROSS-MACHINE VM DEPLOYMENT
+
+### Production run-path fixes (commit 5f859fb)
+- shared/package.json main entry: ./src/index.ts -> ./dist/index.js (prod server resolved TS source at runtime -> ERR_UNKNOWN_FILE_EXTENSION)
+- server build chains shared build first; migrations loaded via FileMigrationSource from dist/migrations (extension-less names, legacy name normalization)
+- Terminal.tsx: xterm.js v6 ConPTY private-mode query auto-replies (9001/1004/1002/1006/2004) - fixes blank remote terminal + dropped keystrokes
+
+### First cross-machine deployment (Windows 10 VM on VMnet8 NAT)
+- VM TEST@192.168.121.134: vyomlink.exe deployed via pscp; identity 1140d3efde45f9e7 -> deviceId da9edc015654b13ec142000b584a3109 (DESKTOP-56R4H9D); scheduled task VyomLink (onstart trigger, per-user, no admin needed)
+- Host firewall blocks inbound TCP 4430 on VMnet8 (unidentified/Public profile; non-admin session cannot add rule) -> SSH reverse tunnel (plink -R 4430:localhost:4430) as workaround; scripts/vm-tunnel.ps1 to restore it after reboots
+- Agent connects ws://localhost:4430/agent.ashx via tunnel; server health reports agents:2
+- server/test/e2e/vm-relay-test.mjs: cross-machine terminal round-trip PASS (echo through full relay stack; VM uses piped cmd.exe fallback after ConPTY probe)
+- Manual web-UI verification against the VM device: Terminal (ch 1), Files (ch 5), Desktop (ch 2) all open and interactive
+- scripts/vm-vyomlink.bat: VM-side launcher (VYOM_SERVER env + log append), copied to the VM and run by the scheduled task
+
+### Outstanding
+- Host firewall allow-rule for TCP 4430 from 192.168.121.0/24 (needs admin) -> then point the VM agent directly at ws://192.168.121.1:4430/agent.ashx and drop the tunnel
+- Agent download route 404 (/downloads/agent/windows/vyomlink.exe vs docs /downloads/vyomlink.exe) - P2
+- P2 backlog: WebRTC P2P, audio, Android agent, i18n (hi/en), API keys/CLI, heartbeat alerts
