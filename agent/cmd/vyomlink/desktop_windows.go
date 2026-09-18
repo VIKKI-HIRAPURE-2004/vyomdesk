@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"image"
 	"syscall"
+	"sync"
 	"unicode"
 	"unsafe"
 
@@ -29,6 +30,7 @@ var (
 	procCreateCompatibleDC = modGdi32.NewProc("CreateCompatibleDC")
 	procDeleteDC           = modGdi32.NewProc("DeleteDC")
 	procCreateCompatBitmap = modGdi32.NewProc("CreateCompatibleBitmap")
+	procCreateDIBSection  = modGdi32.NewProc("CreateDIBSection")
 	procSelectObject       = modGdi32.NewProc("SelectObject")
 	procDeleteObject       = modGdi32.NewProc("DeleteObject")
 	procSetStretchBltMode  = modGdi32.NewProc("SetStretchBltMode")
@@ -40,6 +42,11 @@ var (
 	procGetMonitorInfoW     = modUser32.NewProc("GetMonitorInfoW")
 
 	procGetCursorInfo = modUser32.NewProc("GetCursorInfo")
+
+	modShcore = windows.NewLazySystemDLL("shcore.dll")
+
+	procSetProcessDpiAwareness = modShcore.NewProc("SetProcessDpiAwareness")
+	procSetProcessDPIAware     = modUser32.NewProc("SetProcessDPIAware")
 	procGetIconInfo   = modUser32.NewProc("GetIconInfo")
 	procDrawIconEx    = modUser32.NewProc("DrawIconEx")
 )
@@ -73,8 +80,28 @@ const (
 	monitorinfoFPrimary = 1
 )
 
+	// initDpiAwareness makes the process per-monitor DPI aware. Without it
+	// GetSystemMetrics returns DPI-scaled values on scaled displays (e.g.
+	// VMware 133%: physical 1918x878 reported as 1439x659), and the capture
+	// source rect then mismatches the driver surface, making GetDIBits
+	// intermittently return 0 scan lines. sync.Once guards the call.
+	var dpiOnce sync.Once
+
+	func initDpiAwareness() {
+		dpiOnce.Do(func() {
+			// PROCESS_PER_MONITOR_DPI_AWARE = 2 (shcore.dll, Win 8.1+);
+			// fall back to the legacy user32 API on older systems.
+			if procSetProcessDpiAwareness.Find() == nil {
+				procSetProcessDpiAwareness.Call(2)
+			} else {
+				procSetProcessDPIAware.Call()
+			}
+		})
+	}
+
 // desktopSize returns the full virtual-screen size (all monitors combined).
 func desktopSize() (int, int, error) {
+	initDpiAwareness()
 	w, _, _ := procGetSystemMetrics.Call(smCXVirtualScreen)
 	h, _, _ := procGetSystemMetrics.Call(smCYVirtualScreen)
 	if w == 0 || h == 0 {
@@ -137,7 +164,9 @@ type bitmapInfoHeader struct {
 
 // captureScreen captures the whole virtual screen scaled by factor (0.25..1),
 // draws the remote cursor into the frame, and returns an RGBA image plus the
-// unscaled pixel size.
+// unscaled pixel size. Uses CreateDIBSection so StretchBlt renders straight
+// into a DIB: no GetDIBits read-back needed, which some display drivers
+// (e.g. VMware SVGA 3D) intermittently return 0 scan lines for.
 func captureScreen(scale float64) (*image.RGBA, int, int, error) {
 	rw, rh, err := desktopSize()
 	if err != nil {
@@ -165,9 +194,22 @@ func captureScreen(scale float64) (*image.RGBA, int, int, error) {
 	}
 	defer procDeleteDC.Call(memDC)
 
-	bmp, _, _ := procCreateCompatBitmap.Call(screenDC, uintptr(capW), uintptr(capH))
+	// DIB section: positive BiHeight gives bottom-up rows, which the pixel
+	// loop below flips while swizzling BGRA -> RGBA.
+	stride := capW * 4
+	var bmi bitmapInfoHeader
+	bmi.BiSize = uint32(unsafe.Sizeof(bmi))
+	bmi.BiWidth = int32(capW)
+	bmi.BiHeight = int32(capH)
+	bmi.BiPlanes = 1
+	bmi.BiBitCount = 32
+	bmi.BiCompression = biRGB
+
+	var bits unsafe.Pointer
+	bmp, _, _ := procCreateDIBSection.Call(memDC, uintptr(unsafe.Pointer(&bmi)), dibRGBColors,
+		uintptr(unsafe.Pointer(&bits)), 0, 0)
 	if bmp == 0 {
-		return nil, 0, 0, errors.New("CreateCompatibleBitmap failed")
+		return nil, 0, 0, errors.New("CreateDIBSection failed")
 	}
 	defer procDeleteObject.Call(bmp)
 
@@ -190,31 +232,21 @@ func captureScreen(scale float64) (*image.RGBA, int, int, error) {
 	// draw the real remote cursor into the frame (GDI capture misses it)
 	drawCursor(memDC, scale, vx, vy)
 
-	stride := capW * 4
-	raw := make([]byte, stride*capH)
-	var bmi bitmapInfoHeader
-	bmi.BiSize = uint32(unsafe.Sizeof(bmi))
-	bmi.BiWidth = int32(capW)
-	bmi.BiHeight = -int32(capH) // negative = top-down rows
-	bmi.BiPlanes = 1
-	bmi.BiBitCount = 32
-	bmi.BiCompression = biRGB
-	r2, _, _ := procGetDIBits.Call(memDC, bmp, 0, uintptr(capH),
-		uintptr(unsafe.Pointer(&raw[0])), uintptr(unsafe.Pointer(&bmi)), dibRGBColors)
-	if r2 == 0 {
-		return nil, 0, 0, errors.New("GetDIBits failed")
-	}
+	raw := unsafe.Slice((*byte)(bits), stride*capH)
 
 	img := image.NewRGBA(image.Rect(0, 0, capW, capH))
-	for i := 0; i < capW*capH; i++ {
-		img.Pix[i*4+0] = raw[i*4+2] // R <- BGRA
-		img.Pix[i*4+1] = raw[i*4+1] // G
-		img.Pix[i*4+2] = raw[i*4+0] // B
-		img.Pix[i*4+3] = 0xff
+	for y := 0; y < capH; y++ {
+		src := (capH - 1 - y) * stride // bottom-up -> top-down row flip
+		dst := y * stride
+		for x := 0; x < capW; x++ {
+			img.Pix[dst+x*4+0] = raw[src+x*4+2] // R <- BGRA
+			img.Pix[dst+x*4+1] = raw[src+x*4+1] // G
+			img.Pix[dst+x*4+2] = raw[src+x*4+0] // B
+			img.Pix[dst+x*4+3] = 0xff
+		}
 	}
 	return img, rw, rh, nil
 }
-
 // drawCursor renders the system cursor at its real position into the capture.
 // CURSORINFO (x64, 24B): cbSize@0, flags@4, hCursor@8, ptScreenPos@16(x)/@20(y).
 // ICONINFO (x64, 32B): fIcon@0, xHotspot@4, yHotspot@8, hbmMask@16, hbmColor@24.

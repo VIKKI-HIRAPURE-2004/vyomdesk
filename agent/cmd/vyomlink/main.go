@@ -66,6 +66,11 @@ func main() {
 		}
 	}
 
+	// acquireSingleInstance exits when another vyomlink with the same
+	// identity dir is already running (e.g. a leftover console copy racing
+	// the scheduled-task one); it prevents the server "replaced" kick loop.
+	acquireSingleInstance()
+
 	// running as a Windows service? SCM starts us with "service run"
 	if isWindowsService() {
 		if err := runService(); err != nil {

@@ -162,6 +162,7 @@ func (ds *desktopSession) run() {
 	ds.mu.Unlock()
 	ds.sendSize()
 
+	consecFails := 0
 	for {
 		_, fps, _ := ds.settings()
 		if fps < 1 {
@@ -173,10 +174,24 @@ func (ds *desktopSession) run() {
 		case <-time.After(time.Second / time.Duration(fps)):
 		}
 		if err := ds.captureOnce(); err != nil {
-			ds.sendErr(err.Error())
-			relays.close(ds.channel)
-			return
+			// Transient capture glitches (driver hiccups, resolution changes,
+			// station transitions) are common on GDI; retry instead of killing
+			// the whole session. Give up only after ~10 consecutive misses.
+			consecFails++
+			log.Printf("desktop: capture error #%d: %v", consecFails, err)
+			if consecFails >= 10 || errors.Is(err, errFrameTooLarge) {
+				ds.sendErr(err.Error())
+				relays.close(ds.channel)
+				return
+			}
+			select {
+			case <-ds.closed:
+				return
+			case <-time.After(500 * time.Millisecond):
+			}
+			continue
 		}
+		consecFails = 0
 	}
 }
 

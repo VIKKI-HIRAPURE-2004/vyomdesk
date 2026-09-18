@@ -596,3 +596,29 @@ full-flow âœ… relay âœ… files âœ… groups âœ… desktop âœ… con
 - Host firewall allow-rule for TCP 4430 from 192.168.121.0/24 (needs admin) -> then point the VM agent directly at ws://192.168.121.1:4430/agent.ashx and drop the tunnel
 - Agent download route 404 (/downloads/agent/windows/vyomlink.exe vs docs /downloads/vyomlink.exe) - P2
 - P2 backlog: WebRTC P2P, audio, Android agent, i18n (hi/en), API keys/CLI, heartbeat alerts
+---
+
+## Update 2026-09-18: Session 20 — VM desktop capture fix + agent single-instance guard (P1)
+
+### Problems found (via new live e2e tests, VM logs, SSH diagnostics)
+1. **Desktop channel dead on VM** (`GetDIBits failed`): agent used CreateCompatibleBitmap + StretchBlt + GetDIBits read-back. VMware SVGA 3D driver intermittently returns 0 scan lines from GetDIBits (LastError=0) — worked on host GPU, failed on VM.
+2. **Terminal unstable (`close 4000: replaced` loop)**: TWO vyomlink.exe instances were running on the VM (console PID 4320 + a rogue SSH-spawned session-0 PID 8856). Server kicks the older agent on each duplicate auth → both agents reconnect-fight forever, killing any open terminal/desktop session every ~35s.
+3. **Panic bug during fix**: SetProcessDpiAwareness lives in shcore.dll, not user32 — LazyProc.Call panicked on first desktop channel open (fixed with Find() guard + fallback).
+
+### Fixes
+- **agent/desktop_windows.go**: captureScreen rewritten around **CreateDIBSection** — StretchBlt renders directly into the DIB surface; no GetDIBits read-back at all (also faster: no extra copy). Bottom-up DIB rows flipped + BGRA->RGBA swizzle in the pixel loop. Added per-monitor DPI awareness (SetProcessDpiAwareness via shcore.dll with SetProcessDPIAware fallback) so GetSystemMetrics reports physical resolution on scaled displays.
+- **agent/desktop.go**: run() loop now tolerates transient capture glitches — retries every 500ms, kills the session only after 10 consecutive failures (~5s) or errFrameTooLarge.
+- **agent/main.go + singleinstance{,_windows,_other}.go**: single-instance guard via **Global\ named mutex** (keyed on identity dir). Second instance logs "another vyomlink instance is already running" and exits(0) — duplicate-agent replaced-loops are now impossible regardless of spawn source (SSH logon scripts, manual runs, double task triggers).
+- **server/test/e2e/vm-desktop-test.mjs**: new live e2e — opens channel 2, asserts size meta, counts JPEG frames, reports agent errors.
+
+### Verification (live, against VM DESKTOP-56R4H9D via reverse tunnel)
+- vm-desktop-test.mjs: **54 JPEG frames / 2.8MB / 0 errors in 10s** (was: 0 frames, instant GetDIBits error)
+- vm-relay-test.mjs (terminal round-trip): **PASS**
+- Duplicate-start test: manual second launch exits immediately via mutex ✓
+- 60s stability: no reconnects in agent log ✓
+- Host agent (Black_Ghost) also verified with new binary logic in-process: 55 frames / 0 errors
+
+### Outstanding
+- GitHub repo `VIKKI-HIRAPURE-2004/vyomdesk` still does not exist (public_repos=0, token sees 0 repos, search=0) — must be created in web UI before push.
+- Firewall rule for direct VM→host:4430 (needs admin) — reverse tunnel remains the workaround.
+- Host agent (Black_Ghost) still runs the older binary; deploy the new one on next host restart (host capture worked already; update is for consistency).
